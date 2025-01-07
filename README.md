@@ -13,7 +13,7 @@ A lightweight, web-based messaging application that uses Git as a backend storag
 
 ## Tech Stack
 
-- Backend: Python (no frameworks)
+- Backend: Python 3 (no frameworks)
 - Database: SQLite
 - Frontend: HTML, CSS, JavaScript (vanilla)
 - Version Control & Storage: Git/GitHub API
@@ -56,13 +56,16 @@ eranthe/
    mkdir static templates database src
    ```
 
-4. Install required Python packages (requirements.txt will be provided)
+4. Install required Python packages:
+   ```bash
+   python3 -m pip install -r requirements.txt
+   ```
 
 5. Initialize the SQLite database (script will be provided)
 
 6. Run the server:
    ```bash
-   python src/server.py
+   python3 src/server.py
    ```
 
 ## Development Status
