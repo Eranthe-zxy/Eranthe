@@ -1,70 +1,78 @@
-# Basic Chat Application
+# Git-Backed Messaging Application
 
-A simple real-time chat application that allows users to communicate with each other.
+A lightweight, web-based messaging application that uses Git as a backend storage system. This application is built using Python, SQLite, and GitHub APIs for the backend, with a simple HTML/CSS/JavaScript frontend.
 
 ## Features
 
-- Real-time messaging
-- Simple and intuitive user interface
-- Text-based communication
+- Real-time messaging interface
+- Git-backed message storage
+- User authentication
+- Message history
+- Simple and clean UI
+- SQLite database for user management
 
-## Installation
+## Tech Stack
 
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd <repository-name>
-```
-
-2. Install dependencies:
-```bash
-npm install
-```
-
-## Usage
-
-1. Start the server:
-```bash
-npm start
-```
-
-2. Open your web browser and navigate to `http://localhost:3000`
-
-3. Begin chatting!
-
-## Technologies Used
-
-- Node.js
-- Express.js
-- Socket.IO
-- HTML/CSS
-- JavaScript
+- Backend: Python (no frameworks)
+- Database: SQLite
+- Frontend: HTML, CSS, JavaScript (vanilla)
+- Version Control & Storage: Git/GitHub API
+- Authentication: GitHub OAuth
 
 ## Project Structure
 
 ```
-.
-├── README.md
-├── package.json
-├── public/
-│   ├── index.html
-│   ├── styles.css
-│   └── client.js
-└── server.js
+eranthe/
+├── .env                 # Environment variables (GitHub tokens, etc.)
+├── .gitignore          # Git ignore file
+├── README.md           # This file
+├── static/             # Static files (CSS, JS, images)
+├── templates/          # HTML templates
+├── database/           # SQLite database files
+└── src/               # Source code
+    ├── server.py      # Main server file
+    ├── db.py          # Database operations
+    ├── git_ops.py     # Git operations
+    └── auth.py        # Authentication handling
 ```
 
-## Contributing
+## Setup Instructions
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/eranthe.git
+   cd eranthe
+   ```
+
+2. Create and configure `.env` file with your GitHub credentials:
+   ```
+   GITHUB_TOKEN=your_github_token
+   GITHUB_CLIENT_ID=your_client_id
+   GITHUB_CLIENT_SECRET=your_client_secret
+   ```
+
+3. Create necessary directories:
+   ```bash
+   mkdir static templates database src
+   ```
+
+4. Install required Python packages (requirements.txt will be provided)
+
+5. Initialize the SQLite database (script will be provided)
+
+6. Run the server:
+   ```bash
+   python src/server.py
+   ```
+
+## Development Status
+
+🚧 Under active development
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT License
 
-## Last Updated
+## Contributing
 
-2025-01-07
+Contributions are welcome! Please feel free to submit a Pull Request.
