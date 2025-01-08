@@ -11,11 +11,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class GitMessageHandler:
-    def __init__(self, repo_name="messages", message_dir="messages"):
+    def __init__(self, message_dir="messages"):
         """Initialize the Git message handler.
         
         Args:
-            repo_name (str): Name of the GitHub repository
             message_dir (str): Directory where messages will be stored
         """
         self.github_token = os.getenv('GITHUB_TOKEN')
@@ -27,41 +26,40 @@ class GitMessageHandler:
             'Accept': 'application/vnd.github.v3+json'
         }
         self.api_base = 'https://api.github.com'
-        self.repo_name = repo_name
         self.message_dir = message_dir
-        self.repo = self._get_or_create_repo()
         
-    def _get_or_create_repo(self):
-        """Get or create the GitHub repository."""
+        # Get the current repository from git config
+        self.repo_info = self._get_current_repo_info()
+        print(f"Using repository: {self.repo_info['full_name']}")
+
+    def _get_current_repo_info(self):
+        """Get the current repository information from local git config."""
         try:
-            # Try to get the authenticated user
-            user_response = requests.get(f'{self.api_base}/user', headers=self.headers)
-            user_response.raise_for_status()
-            username = user_response.json()['login']
+            # Get the remote URL from git config
+            with os.popen('git config --get remote.origin.url') as f:
+                remote_url = f.read().strip()
             
-            # Try to get the repository
-            repo_url = f'{self.api_base}/repos/{username}/{self.repo_name}'
-            repo_response = requests.get(repo_url, headers=self.headers)
+            if not remote_url:
+                raise ValueError("No git remote URL found")
             
-            if repo_response.status_code == 404:
-                # Create repository if it doesn't exist
-                create_repo_url = f'{self.api_base}/user/repos'
-                repo_data = {
-                    'name': self.repo_name,
-                    'private': True,
-                    'auto_init': True
-                }
-                repo_response = requests.post(create_repo_url, json=repo_data, headers=self.headers)
-                repo_response.raise_for_status()
-                print(f"Created new repository {self.repo_name}")
-            else:
-                repo_response.raise_for_status()
-                print(f"Repository {self.repo_name} found")
+            # Extract owner and repo name from the URL
+            # Handle both HTTPS and SSH URLs
+            if remote_url.startswith('https://'):
+                parts = remote_url.replace('https://github.com/', '').replace('.git', '').split('/')
+            else:  # SSH URL
+                parts = remote_url.split(':')[1].replace('.git', '').split('/')
                 
-            return repo_response.json()
+            owner, repo = parts[-2:]
             
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"Error accessing GitHub: {str(e)}")
+            # Verify the repository exists and we have access
+            repo_url = f'{self.api_base}/repos/{owner}/{repo}'
+            response = requests.get(repo_url, headers=self.headers)
+            response.raise_for_status()
+            
+            return response.json()
+            
+        except Exception as e:
+            raise Exception(f"Error getting repository information: {str(e)}")
 
     def store_message(self, message_content, author="Anonymous"):
         """Store a message in the GitHub repository."""
@@ -79,13 +77,11 @@ class GitMessageHandler:
         filename = f"{self.message_dir}/{timestamp.replace(':', '-')}.json"
         
         try:
-            # Get the authenticated user
-            user_response = requests.get(f'{self.api_base}/user', headers=self.headers)
-            user_response.raise_for_status()
-            username = user_response.json()['login']
+            # Create the messages directory if it doesn't exist
+            self._ensure_messages_directory()
             
             # Create the file in the repository
-            create_file_url = f'{self.api_base}/repos/{username}/{self.repo_name}/contents/{filename}'
+            create_file_url = f'{self.api_base}/repos/{self.repo_info["full_name"]}/contents/{filename}'
             file_data = {
                 'message': f'Add message from {author}',
                 'content': base64.b64encode(json.dumps(message_data, indent=2).encode()).decode()
@@ -103,16 +99,33 @@ class GitMessageHandler:
         except requests.exceptions.RequestException as e:
             raise Exception(f"Error storing message: {str(e)}")
 
+    def _ensure_messages_directory(self):
+        """Ensure the messages directory exists in the repository."""
+        try:
+            # Try to get the messages directory
+            contents_url = f'{self.api_base}/repos/{self.repo_info["full_name"]}/contents/{self.message_dir}'
+            response = requests.get(contents_url, headers=self.headers)
+            
+            if response.status_code == 404:
+                # Create the directory with a .gitkeep file
+                file_data = {
+                    'message': 'Create messages directory',
+                    'content': base64.b64encode(b'').decode(),
+                    'path': f'{self.message_dir}/.gitkeep'
+                }
+                create_url = f'{self.api_base}/repos/{self.repo_info["full_name"]}/contents/{self.message_dir}/.gitkeep'
+                response = requests.put(create_url, json=file_data, headers=self.headers)
+                response.raise_for_status()
+                
+        except requests.exceptions.RequestException as e:
+            if response.status_code != 404:  # Ignore 404 errors as we'll create the directory
+                raise Exception(f"Error ensuring messages directory exists: {str(e)}")
+
     def get_messages(self, limit=100):
         """Retrieve messages from the GitHub repository."""
         try:
-            # Get the authenticated user
-            user_response = requests.get(f'{self.api_base}/user', headers=self.headers)
-            user_response.raise_for_status()
-            username = user_response.json()['login']
-            
             # Get the contents of the messages directory
-            contents_url = f'{self.api_base}/repos/{username}/{self.repo_name}/contents/{self.message_dir}'
+            contents_url = f'{self.api_base}/repos/{self.repo_info["full_name"]}/contents/{self.message_dir}'
             response = requests.get(contents_url, headers=self.headers)
             
             if response.status_code == 404:
@@ -121,11 +134,17 @@ class GitMessageHandler:
             response.raise_for_status()
             contents = response.json()
             
+            if not isinstance(contents, list):
+                return []
+                
             messages = []
             for content in contents[:limit]:
+                if content['name'] == '.gitkeep':
+                    continue
+                    
                 file_response = requests.get(content['download_url'], headers=self.headers)
                 file_response.raise_for_status()
-                message_data = json.loads(file_response.text)
+                message_data = file_response.json()
                 messages.append(message_data)
                 
             # Sort messages by timestamp
