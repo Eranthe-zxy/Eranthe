@@ -18,7 +18,7 @@ class MessageHandler(http.server.SimpleHTTPRequestHandler):
         self.db = DatabaseManager()
         self.git = GitMessageHandler()
         # Initialize the parent class
-        super().__init__(*args, **kwargs)
+        super(http.server.SimpleHTTPRequestHandler, self).__init__(*args, **kwargs)
 
     def do_GET(self):
         """Handle GET requests."""
@@ -142,6 +142,10 @@ class MessageHandler(http.server.SimpleHTTPRequestHandler):
 
 def run_server(port=8000):
     """Start the HTTP server."""
+    # Ensure database is initialized
+    db = DatabaseManager()
+    db.init_db()
+    
     with socketserver.TCPServer(("", port), MessageHandler) as httpd:
         print(f"Server running on port {port}")
         try:

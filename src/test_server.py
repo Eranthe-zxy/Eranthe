@@ -28,6 +28,9 @@ class TestMessageEndpoint(unittest.TestCase):
         cls.test_db_path = os.path.join(cls.test_dir, 'test.db')
         cls.test_static_dir = os.path.join(cls.test_dir, 'static')
         os.makedirs(cls.test_static_dir, exist_ok=True)
+        
+        # Create database directory
+        os.makedirs(os.path.dirname(cls.test_db_path), exist_ok=True)
 
         # Create a simple index.html for testing
         with open(os.path.join(cls.test_static_dir, 'index.html'), 'w') as f:
@@ -40,9 +43,11 @@ class TestMessageEndpoint(unittest.TestCase):
         # Create handler class with test configuration
         class TestHandler(MessageHandler):
             def __init__(self, *args, **kwargs):
+                # Initialize the database first
                 self.db = DatabaseManager(db_path=cls.test_db_path)
                 self.git = GitMessageHandler()
-                super().__init__(*args, **kwargs)
+                # Initialize the parent class
+                super(http.server.SimpleHTTPRequestHandler, self).__init__(*args, **kwargs)
 
         # Start server in a separate thread
         cls.httpd = socketserver.TCPServer(("", cls.server_port), TestHandler)
@@ -63,7 +68,9 @@ class TestMessageEndpoint(unittest.TestCase):
         # Clear the database before each test
         if os.path.exists(self.test_db_path):
             os.remove(self.test_db_path)
+        # Re-initialize the database
         self.db = DatabaseManager(db_path=self.test_db_path)
+        self.db.init_db()
 
     def test_post_message_success(self):
         """Test successful message posting."""
@@ -165,6 +172,11 @@ class TestMessageEndpoint(unittest.TestCase):
                 data['data']['github_url'],
                 mock_github_result['details']['html_url']
             )
+
+            # Verify message is in database
+            messages = self.db.get_messages()
+            self.assertEqual(len(messages), 1)
+            self.assertEqual(messages[0]['github_url'], mock_github_result['details']['html_url'])
 
     def test_post_message_github_failure(self):
         """Test handling of GitHub storage failure."""
