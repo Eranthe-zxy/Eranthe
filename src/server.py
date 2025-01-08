@@ -23,14 +23,24 @@ class MessageHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         """Handle GET requests."""
         parsed_path = urlparse(self.path)
+        query_params = parse_qs(parsed_path.query)
         
         # Route handling
         if parsed_path.path == '/':
             # Serve the main page
             self.serve_static_file('index.html')
         elif parsed_path.path == '/messages':
+            # Get limit parameter, default to 100
+            try:
+                limit = int(query_params.get('limit', [100])[0])
+                if limit < 1:
+                    raise ValueError("Limit must be positive")
+            except ValueError as e:
+                self.send_error(HTTPStatus.BAD_REQUEST, f"Invalid limit parameter: {str(e)}")
+                return
+                
             # Return list of messages from database
-            messages = self.db.get_messages()
+            messages = self.db.get_messages(limit=limit)
             self.send_json_response({'messages': messages})
         else:
             # Try to serve static files

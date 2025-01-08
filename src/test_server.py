@@ -72,6 +72,84 @@ class TestMessageEndpoint(unittest.TestCase):
         self.db = DatabaseManager(db_path=self.test_db_path)
         self.db.init_db()
 
+    def test_get_messages_empty(self):
+        """Test getting messages when database is empty."""
+        response = requests.get(f'{self.server_url}/messages')
+        self.assertEqual(response.status_code, 200)
+        
+        data = response.json()
+        self.assertIn('messages', data)
+        self.assertEqual(len(data['messages']), 0)
+
+    def test_get_messages_with_data(self):
+        """Test getting messages when database has content."""
+        # Add some test messages
+        test_messages = [
+            {"message": "Test message 1", "author": "User1"},
+            {"message": "Test message 2", "author": "User2"},
+            {"message": "Test message 3", "author": "User3"}
+        ]
+        
+        # Store messages in database
+        for msg in test_messages:
+            response = requests.post(
+                f'{self.server_url}/messages',
+                json=msg
+            )
+            self.assertEqual(response.status_code, 200)
+        
+        # Get all messages
+        response = requests.get(f'{self.server_url}/messages')
+        self.assertEqual(response.status_code, 200)
+        
+        data = response.json()
+        self.assertIn('messages', data)
+        messages = data['messages']
+        
+        # Verify message count
+        self.assertEqual(len(messages), len(test_messages))
+        
+        # Verify message content (in reverse order due to timestamp sorting)
+        for i, msg in enumerate(reversed(test_messages)):
+            self.assertEqual(messages[i]['content'], msg['message'])
+            self.assertEqual(messages[i]['author'], msg['author'])
+            self.assertIn('timestamp', messages[i])
+            self.assertIn('id', messages[i])
+
+    def test_get_messages_limit(self):
+        """Test message limit parameter."""
+        # Add more messages than the default limit
+        test_messages = [
+            {"message": f"Test message {i}", "author": f"User{i}"}
+            for i in range(150)  # More than default limit of 100
+        ]
+        
+        # Store messages
+        for msg in test_messages:
+            response = requests.post(
+                f'{self.server_url}/messages',
+                json=msg
+            )
+            self.assertEqual(response.status_code, 200)
+        
+        # Test default limit
+        response = requests.get(f'{self.server_url}/messages')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data['messages']), 100)  # Default limit
+        
+        # Test custom limit
+        response = requests.get(f'{self.server_url}/messages?limit=50')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data['messages']), 50)
+        
+        # Test limit larger than available messages
+        response = requests.get(f'{self.server_url}/messages?limit=200')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data['messages']), len(test_messages))
+
     def test_post_message_success(self):
         """Test successful message posting."""
         test_message = {
