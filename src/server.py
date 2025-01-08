@@ -7,14 +7,19 @@ import os
 from urllib.parse import parse_qs, urlparse
 from http import HTTPStatus
 from datetime import datetime
+from db import DatabaseManager
+from git_ops import GitMessageHandler
 
 class MessageHandler(http.server.SimpleHTTPRequestHandler):
     """Custom HTTP request handler for the messaging application."""
     
     def __init__(self, *args, **kwargs):
+        # Initialize database and GitHub handlers
+        self.db = DatabaseManager()
+        self.git = GitMessageHandler()
         # Initialize the parent class
         super().__init__(*args, **kwargs)
-        
+
     def do_GET(self):
         """Handle GET requests."""
         parsed_path = urlparse(self.path)
@@ -24,8 +29,9 @@ class MessageHandler(http.server.SimpleHTTPRequestHandler):
             # Serve the main page
             self.serve_static_file('index.html')
         elif parsed_path.path == '/messages':
-            # Return list of messages
-            self.send_json_response({'messages': []})  # Empty for now
+            # Return list of messages from database
+            messages = self.db.get_messages()
+            self.send_json_response({'messages': messages})
         else:
             # Try to serve static files
             self.serve_static_file(parsed_path.path.lstrip('/'))
@@ -42,15 +48,52 @@ class MessageHandler(http.server.SimpleHTTPRequestHandler):
             post_data = self.rfile.read(content_length)
             try:
                 message_data = json.loads(post_data.decode('utf-8'))
-                # Store message (to be implemented)
+                
+                # Validate message data
+                if 'message' not in message_data:
+                    raise ValueError("Message content is required")
+                
+                # Get author from message data or use default
+                author = message_data.get('author', 'Anonymous')
+                
+                # Store message in database first
+                db_message = self.db.store_message(
+                    content=message_data['message'],
+                    author=author
+                )
+                
+                try:
+                    # Store message in GitHub
+                    git_result = self.git.store_message(
+                        message_content=message_data['message'],
+                        author=author
+                    )
+                    
+                    # Update database with GitHub URL if available
+                    if git_result.get('details', {}).get('html_url'):
+                        self.db.update_github_url(
+                            db_message['id'],
+                            git_result['details']['html_url']
+                        )
+                        db_message['github_url'] = git_result['details']['html_url']
+                        
+                except Exception as e:
+                    print(f"Warning: Failed to store message in GitHub: {str(e)}")
+                    # Continue even if GitHub storage fails
+                
                 response_data = {
                     'status': 'success',
-                    'message': 'Message received',
-                    'timestamp': datetime.now().isoformat()
+                    'message': 'Message stored successfully',
+                    'data': db_message
                 }
                 self.send_json_response(response_data)
+                
             except json.JSONDecodeError:
                 self.send_error(HTTPStatus.BAD_REQUEST, "Invalid JSON data")
+            except ValueError as e:
+                self.send_error(HTTPStatus.BAD_REQUEST, str(e))
+            except Exception as e:
+                self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, f"Error processing message: {str(e)}")
         else:
             self.send_error(HTTPStatus.NOT_FOUND, "Endpoint not found")
     
