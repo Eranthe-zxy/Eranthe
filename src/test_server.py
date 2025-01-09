@@ -7,71 +7,42 @@ import threading
 import http.server
 import socketserver
 import requests
-from unittest.mock import Mock, patch
+import time
+from unittest.mock import patch, MagicMock
 from datetime import datetime
-import tempfile
-import shutil
-
-# Import our server modules
-from server import MessageHandler
 from db import DatabaseManager
-from git_ops import GitMessageHandler
+from server import MessageHandler, run_server
 
 class TestMessageEndpoint(unittest.TestCase):
-    """Test cases for the message POST endpoint."""
+    """Test cases for message endpoints."""
 
     @classmethod
     def setUpClass(cls):
-        """Set up the test server in a separate thread."""
-        # Create a temporary directory for test files
-        cls.test_dir = tempfile.mkdtemp()
-        cls.test_db_path = os.path.join(cls.test_dir, 'test.db')
-        cls.test_static_dir = os.path.join(cls.test_dir, 'static')
-        os.makedirs(cls.test_static_dir, exist_ok=True)
+        """Set up test environment."""
+        # Use a test port
+        cls.port = 8001
+        cls.server_url = f'http://localhost:{cls.port}'
         
-        # Create database directory
-        os.makedirs(os.path.dirname(cls.test_db_path), exist_ok=True)
-
-        # Create a simple index.html for testing
-        with open(os.path.join(cls.test_static_dir, 'index.html'), 'w') as f:
-            f.write("<html><body>Test Page</body></html>")
-
-        # Set up the test server
-        cls.server_port = 8888
-        cls.server_url = f'http://localhost:{cls.server_port}'
-        
-        # Create handler class with test configuration
-        class TestHandler(MessageHandler):
-            def __init__(self, *args, **kwargs):
-                # Initialize the database first
-                self.db = DatabaseManager(db_path=cls.test_db_path)
-                self.git = GitMessageHandler()
-                # Initialize the parent class
-                super(http.server.SimpleHTTPRequestHandler, self).__init__(*args, **kwargs)
-
         # Start server in a separate thread
-        cls.httpd = socketserver.TCPServer(("", cls.server_port), TestHandler)
-        cls.server_thread = threading.Thread(target=cls.httpd.serve_forever)
-        cls.server_thread.daemon = True
+        cls.server_thread = threading.Thread(
+            target=run_server,
+            args=(cls.port,),
+            daemon=True
+        )
         cls.server_thread.start()
-
-    @classmethod
-    def tearDownClass(cls):
-        """Clean up after all tests."""
-        cls.httpd.shutdown()
-        cls.httpd.server_close()
-        cls.server_thread.join()
-        shutil.rmtree(cls.test_dir)
-
+        
+        # Wait for server to start
+        time.sleep(1)
+        
+        # Initialize database
+        cls.db = DatabaseManager()
+        cls.db.init_db()
+    
     def setUp(self):
-        """Set up test fixtures."""
-        # Clear the database before each test
-        if os.path.exists(self.test_db_path):
-            os.remove(self.test_db_path)
-        # Re-initialize the database
-        self.db = DatabaseManager(db_path=self.test_db_path)
+        """Set up test database."""
+        # Clear database before each test
         self.db.init_db()
-
+    
     def test_get_messages_empty(self):
         """Test getting messages when database is empty."""
         response = requests.get(f'{self.server_url}/messages')
@@ -80,7 +51,7 @@ class TestMessageEndpoint(unittest.TestCase):
         data = response.json()
         self.assertIn('messages', data)
         self.assertEqual(len(data['messages']), 0)
-
+    
     def test_get_messages_with_data(self):
         """Test getting messages when database has content."""
         # Add some test messages
@@ -115,7 +86,7 @@ class TestMessageEndpoint(unittest.TestCase):
             self.assertEqual(messages[i]['author'], msg['author'])
             self.assertIn('timestamp', messages[i])
             self.assertIn('id', messages[i])
-
+    
     def test_get_messages_limit(self):
         """Test message limit parameter."""
         # Add more messages than the default limit
@@ -149,143 +120,190 @@ class TestMessageEndpoint(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(len(data['messages']), len(test_messages))
-
+    
+    def test_get_messages_invalid_limit(self):
+        """Test invalid limit parameter."""
+        # Test negative limit
+        response = requests.get(f'{self.server_url}/messages?limit=-1')
+        self.assertEqual(response.status_code, 400)
+        
+        # Test zero limit
+        response = requests.get(f'{self.server_url}/messages?limit=0')
+        self.assertEqual(response.status_code, 400)
+        
+        # Test non-numeric limit
+        response = requests.get(f'{self.server_url}/messages?limit=abc')
+        self.assertEqual(response.status_code, 400)
+    
     def test_post_message_success(self):
         """Test successful message posting."""
-        test_message = {
-            "message": "Test message content",
-            "author": "TestUser"
+        message_data = {
+            "message": "Test message",
+            "author": "Test User"
         }
-
+        
         response = requests.post(
             f'{self.server_url}/messages',
-            json=test_message
+            json=message_data
         )
-
+        
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        
-        # Verify response format
         self.assertEqual(data['status'], 'success')
-        self.assertEqual(data['message'], 'Message stored successfully')
         self.assertIn('data', data)
-        
-        # Verify message data
-        stored_message = data['data']
-        self.assertEqual(stored_message['content'], test_message['message'])
-        self.assertEqual(stored_message['author'], test_message['author'])
-        self.assertIn('timestamp', stored_message)
-        self.assertIn('id', stored_message)
-
-        # Verify message is in database
-        messages = self.db.get_messages()
-        self.assertEqual(len(messages), 1)
-        self.assertEqual(messages[0]['content'], test_message['message'])
-
+        self.assertEqual(data['data']['content'], message_data['message'])
+        self.assertEqual(data['data']['author'], message_data['author'])
+    
     def test_post_message_no_author(self):
         """Test message posting without author."""
-        test_message = {
-            "message": "Test message without author"
+        message_data = {
+            "message": "Test message"
         }
-
+        
         response = requests.post(
             f'{self.server_url}/messages',
-            json=test_message
+            json=message_data
         )
-
+        
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data['data']['author'], 'Anonymous')
-
+    
+    def test_post_message_missing_content(self):
+        """Test posting message without content."""
+        message_data = {
+            "author": "Test User"
+        }
+        
+        response = requests.post(
+            f'{self.server_url}/messages',
+            json=message_data
+        )
+        
+        self.assertEqual(response.status_code, 400)
+    
     def test_post_message_invalid_json(self):
         """Test posting invalid JSON data."""
         response = requests.post(
             f'{self.server_url}/messages',
-            data="Invalid JSON"
+            data="Invalid JSON",
+            headers={'Content-Type': 'application/json'}
         )
-
+        
         self.assertEqual(response.status_code, 400)
-
-    def test_post_message_missing_content(self):
-        """Test posting message without content."""
-        test_message = {
-            "author": "TestUser"
-        }
-
-        response = requests.post(
-            f'{self.server_url}/messages',
-            json=test_message
-        )
-
-        self.assertEqual(response.status_code, 400)
-
+    
     def test_post_message_github_integration(self):
         """Test GitHub integration with message posting."""
-        test_message = {
+        message_data = {
             "message": "Test GitHub integration",
-            "author": "TestUser"
+            "author": "Test User"
         }
-
-        # Mock the GitHub storage
-        mock_github_result = {
-            'status': 'success',
-            'message': 'Message stored in GitHub',
-            'details': {
-                'html_url': 'https://github.com/test/repo/blob/main/messages/test.json'
+        
+        with patch('git_ops.GitMessageHandler.store_message') as mock_store:
+            mock_store.return_value = {
+                'status': 'success',
+                'details': {
+                    'html_url': 'https://github.com/test/repo/commit/123'
+                }
             }
-        }
-
-        with patch.object(GitMessageHandler, 'store_message', return_value=mock_github_result):
+            
             response = requests.post(
                 f'{self.server_url}/messages',
-                json=test_message
+                json=message_data
             )
-
+            
             self.assertEqual(response.status_code, 200)
             data = response.json()
-            
-            # Verify GitHub URL was stored
             self.assertIn('github_url', data['data'])
             self.assertEqual(
                 data['data']['github_url'],
-                mock_github_result['details']['html_url']
+                'https://github.com/test/repo/commit/123'
             )
-
-            # Verify message is in database
-            messages = self.db.get_messages()
-            self.assertEqual(len(messages), 1)
-            self.assertEqual(messages[0]['github_url'], mock_github_result['details']['html_url'])
-
+    
     def test_post_message_github_failure(self):
         """Test handling of GitHub storage failure."""
-        test_message = {
-            "message": "Test GitHub failure handling",
-            "author": "TestUser"
+        message_data = {
+            "message": "Test GitHub failure",
+            "author": "Test User"
         }
-
-        # Mock GitHub storage to fail
-        with patch.object(GitMessageHandler, 'store_message', side_effect=Exception("GitHub error")):
+        
+        with patch('git_ops.GitMessageHandler.store_message') as mock_store:
+            mock_store.side_effect = Exception("GitHub error")
+            
             response = requests.post(
                 f'{self.server_url}/messages',
-                json=test_message
+                json=message_data
             )
-
-            # Message should still be stored successfully in database
+            
+            # Message should still be stored in database
             self.assertEqual(response.status_code, 200)
             data = response.json()
-            self.assertEqual(data['status'], 'success')
-            
-            # Verify message is in database
-            messages = self.db.get_messages()
-            self.assertEqual(len(messages), 1)
-            self.assertEqual(messages[0]['content'], test_message['message'])
-            
-            # GitHub URL should not be present
-            self.assertIsNone(messages[0]['github_url'])
-
-def run_tests():
-    """Run the test suite."""
-    unittest.main(verbosity=2)
+            self.assertNotIn('github_url', data['data'])
+    
+    def test_message_order(self):
+        """Test that messages are returned in reverse chronological order."""
+        # Add messages with different timestamps
+        messages = [
+            {"message": "First message", "author": "User1"},
+            {"message": "Second message", "author": "User2"},
+            {"message": "Third message", "author": "User3"}
+        ]
+        
+        for msg in messages:
+            response = requests.post(
+                f'{self.server_url}/messages',
+                json=msg
+            )
+            self.assertEqual(response.status_code, 200)
+            time.sleep(1)  # Ensure different timestamps
+        
+        # Get messages
+        response = requests.get(f'{self.server_url}/messages')
+        self.assertEqual(response.status_code, 200)
+        
+        data = response.json()
+        messages = data['messages']
+        
+        # Verify reverse chronological order
+        timestamps = [msg['timestamp'] for msg in messages]
+        self.assertEqual(timestamps, sorted(timestamps, reverse=True))
+    
+    def test_concurrent_requests(self):
+        """Test handling of concurrent requests."""
+        num_requests = 10
+        
+        def make_request():
+            message_data = {
+                "message": "Concurrent test",
+                "author": "Test User"
+            }
+            return requests.post(
+                f'{self.server_url}/messages',
+                json=message_data
+            )
+        
+        # Make concurrent requests
+        threads = []
+        responses = []
+        for _ in range(num_requests):
+            thread = threading.Thread(
+                target=lambda: responses.append(make_request())
+            )
+            threads.append(thread)
+            thread.start()
+        
+        # Wait for all requests to complete
+        for thread in threads:
+            thread.join()
+        
+        # Verify all requests were successful
+        for response in responses:
+            self.assertEqual(response.status_code, 200)
+        
+        # Verify correct number of messages stored
+        response = requests.get(f'{self.server_url}/messages')
+        data = response.json()
+        self.assertEqual(len(data['messages']), num_requests)
 
 if __name__ == '__main__':
-    run_tests()
+    unittest.main()

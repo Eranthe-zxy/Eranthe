@@ -3,107 +3,186 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Git-Backed Messaging App</title>
+    <title>Message Board</title>
     <style>
+        :root {
+            --primary-color: #2563eb;
+            --background-color: #f8fafc;
+            --text-color: #1e293b;
+            --border-color: #e2e8f0;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            background-color: var(--background-color);
+            padding: 2rem;
+        }
+
+        .container {
             max-width: 800px;
             margin: 0 auto;
-            padding: 20px;
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
+
+        h1 {
+            color: var(--text-color);
+            margin-bottom: 1.5rem;
+            font-size: 1.875rem;
+            font-weight: 600;
+        }
+
         .message-form {
-            margin: 20px 0;
-            padding: 20px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
+            margin-bottom: 2rem;
+            display: flex;
+            gap: 1rem;
         }
-        #message-input {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 10px;
+
+        .message-input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 0.375rem;
+            font-size: 1rem;
+            color: var(--text-color);
+            transition: border-color 0.15s ease-in-out;
         }
-        button {
-            padding: 10px 20px;
-            background-color: #007bff;
+
+        .message-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .submit-button {
+            padding: 0.75rem 1.5rem;
+            background-color: var(--primary-color);
             color: white;
             border: none;
-            border-radius: 5px;
+            border-radius: 0.375rem;
+            font-size: 1rem;
+            font-weight: 500;
             cursor: pointer;
+            transition: background-color 0.15s ease-in-out;
         }
-        button:hover {
-            background-color: #0056b3;
+
+        .submit-button:hover {
+            background-color: #1d4ed8;
         }
-        #messages {
-            margin-top: 20px;
+
+        .submit-button:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.3);
+        }
+
+        .messages {
+            border-top: 1px solid var(--border-color);
+            padding-top: 1.5rem;
+        }
+
+        .message {
+            background-color: white;
+            padding: 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 0.375rem;
+            margin-bottom: 1rem;
+        }
+
+        .message:last-child {
+            margin-bottom: 0;
+        }
+
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+            color: #64748b;
+        }
+
+        .message-content {
+            color: var(--text-color);
+            word-break: break-word;
+        }
+
+        .message-footer {
+            margin-top: 0.75rem;
+            font-size: 0.875rem;
+        }
+
+        .message-footer a {
+            color: var(--primary-color);
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .message-footer a:hover {
+            text-decoration: underline;
+        }
+
+        .error {
+            color: #dc2626;
+            margin-top: 0.5rem;
+            font-size: 0.875rem;
+            padding: 0.75rem;
+            background-color: #fef2f2;
+            border: 1px solid #fee2e2;
+            border-radius: 0.375rem;
+            margin-bottom: 1rem;
+        }
+
+        @media (max-width: 640px) {
+            body {
+                padding: 1rem;
+            }
+
+            .container {
+                padding: 1rem;
+            }
+
+            .message-form {
+                flex-direction: column;
+            }
+
+            .submit-button {
+                width: 100%;
+            }
         }
     </style>
 </head>
 <body>
-    <h1>Git-Backed Messaging App</h1>
-    
-    <div class="message-form">
-        <h2>Send a Message</h2>
-        <textarea id="message-input" placeholder="Type your message here..."></textarea>
-        <button onclick="sendMessage()">Send Message</button>
-    </div>
+    <div class="container">
+        <h1>Message Board</h1>
+        
+        <form class="message-form" id="messageForm">
+            <input 
+                type="text" 
+                id="messageInput" 
+                class="message-input" 
+                placeholder="Type your message..." 
+                required
+            >
+            <button type="submit" class="submit-button">Send</button>
+        </form>
 
-    <div id="messages">
-        <h2>Messages</h2>
-        <div id="message-list">
-            <!-- Messages will be displayed here -->
+        <div class="messages" id="messageList">
+            <!-- Messages will be inserted here -->
         </div>
     </div>
 
-    <script>
-        // Function to send a message
-        async function sendMessage() {
-            const messageInput = document.getElementById('message-input');
-            const message = messageInput.value.trim();
-            
-            if (!message) return;
-
-            try {
-                const response = await fetch('/messages', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ message })
-                });
-
-                const result = await response.json();
-                console.log('Message sent:', result);
-                
-                // Clear input after successful send
-                messageInput.value = '';
-                
-                // Refresh messages
-                getMessages();
-            } catch (error) {
-                console.error('Error sending message:', error);
-            }
-        }
-
-        // Function to get messages
-        async function getMessages() {
-            try {
-                const response = await fetch('/messages');
-                const data = await response.json();
-                
-                const messageList = document.getElementById('message-list');
-                messageList.innerHTML = data.messages.map(msg => `
-                    <div class="message">
-                        <p>${msg.content}</p>
-                        <small>${new Date(msg.timestamp).toLocaleString()}</small>
-                    </div>
-                `).join('');
-            } catch (error) {
-                console.error('Error fetching messages:', error);
-            }
-        }
-
-        // Initial load of messages
-        getMessages();
-    </script>
+    <!-- Load our message handling code -->
+    <script src="/static/js/messages.js"></script>
 </body>
 </html>
